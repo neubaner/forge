@@ -1,5 +1,6 @@
 var ASSERT = require('assert');
 var forge = require('../../lib/forge');
+var ASN1 = require('../../lib/asn1');
 var PKCS7 = require('../../lib/pkcs7');
 var PKI = require('../../lib/pki');
 var AES = require('../../lib/aes');
@@ -786,6 +787,42 @@ var UTIL = require('../../lib/util');
       p7.sign();
       var pem = PKCS7.messageToPem(p7);
       ASSERT.equal(pem, _pem.signedDataWithAttrs1949GeneralizedTime);
+    });
+
+    it('should create PKCS#7 SignedData with custom Authenticated Attributes',
+      function(){
+      var p7 = PKCS7.createSignedData();
+      p7.content = UTIL.createBuffer('To be signed.', 'utf8');
+      p7.addCertificate(_pem.certificate);
+      p7.addSigner({
+        key: _pem.privateKey,
+        certificate: _pem.certificate,
+        digestAlgorithm: PKI.oids.sha256,
+        authenticatedAttributes: [{
+          type: forge.pki.oids.contentType,
+          value: forge.pki.oids.data
+        }, {
+          type: forge.pki.oids.messageDigest
+          // value will be auto-populated at signing time
+        }, {
+          type: forge.pki.oids.signingTime,
+          // will be encoded as generalized time because it's before 1950
+          value: new Date('1949-12-31T23:59:59Z')
+        }, {
+          type: '1.2.3.42',
+          value: ASN1.create(ASN1.Class.CONTEXT_SPECIFIC, 42, true, [])
+        }]
+      });
+
+      p7.sign();
+
+      var authAttrs = p7.signerInfos[0].value[3];
+      var customAttr = authAttrs.value[3];
+      var customAttrId = customAttr.value[0];
+      var customAttrValue = customAttr.value[1].value[0];
+
+      ASSERT.equal(customAttrId.value, ASN1.oidToDer('1.2.3.42').bytes());
+      ASSERT.equal(customAttrValue.type, 42);
     });
 
   });
